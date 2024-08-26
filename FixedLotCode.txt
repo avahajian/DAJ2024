@@ -1,0 +1,504 @@
+import simpy as sim
+import numpy as np
+import decimal, math
+import time, csv
+import matplotlib.pyplot as plt
+from scipy.stats import skew
+
+start = time.time()
+tCC = 0
+avgServiceLevel = 0
+# global_period_array = []
+# starting_inventory = []
+# starting_backorders = []
+
+
+
+def RunQRcode(reOrderPoint, leadtime):
+    global tCC, avgServiceLevel, global_period_array, demandarray, running_inventoryLevel, demands12, demands13, demandRate
+    np.random.seed(4)
+    nrep = 0
+    rep = 10
+    tCC = 0
+    Pcost = 0
+    Ocost = 0
+    Icost = 0
+    Tidletime = 0
+    avgServiceLevel = 0
+    totalUnitsProduced = 0
+    tCC_array = []
+    avgServiceLevel_array = []
+    totalUnitsProduced_array = []
+    starting_backorders = []
+    inventory_average = []
+    orders_average= []
+    lost_sales_average = []
+    
+    # f = open("QROutput_FixedLot.csv", "a", newline="")
+    # writer = csv.writer(f)
+    # writer.writerow(("Event", "TNow","Demand","Demand Met or Not", "Inventory After Demand", "Production Start Time", "Production", "Production End Time", "Production Length","Inventory after Production", "Daily Production", "WAiting Time"))
+
+    
+    while nrep < rep:
+        # print(nrep)
+        demands12 = 0
+        demands13 = 0
+        
+        demandarray = []
+        running_inventoryLevel = []
+
+        demandRate = 4500.0
+        JPH = 60.0
+        leadTime = abs(leadtime)
+        reorderPoint = abs(reOrderPoint)
+    
+        fixedCost = 500
+        inventoryCost = 1.5
+        penaltyCost = 50
+        global_period_array = []
+        
+        global totalDemandArrival, inventoryLevel, backOrders, orders, totalIdleTime, dem2
+        global inventoryPosition, backOrderLevel, requestPlaced, starting_inventory
+        global signal, variableRepairTime, periodinventory, arrivalHours
+        global nextDemandArrivalTime, demandMet, periodicInventory, starting_Inventory_poistion, demnCV
+        global unitsShort, tdArrival
+        
+        tup  = tuple()
+        
+        nextDemandArrivalTime = 0
+        
+        totalDemandArrival = 0
+        inventoryLevel = reorderPoint
+        inventoryPosition = reorderPoint
+        backOrders = 0
+        backOrderLevel = 0
+        orders = 0
+        totalIdleTime = 0
+        requestPlaced = 0
+        signal = 0
+        variableRepairTime = 0
+        
+        starting_inventory = []
+        
+        periodinventory = 0
+        periodicInventory = []
+        
+        starting_Inventory_poistion = []
+        
+        unitsShort = 0
+        tdArrival = 0
+        
+        demandMet = 0
+        
+        #####################
+        demnCV = 0.16
+        days = 5.0
+        arrivalHours = 24.0*days
+        failure = 20.0
+        repair = 5.0
+        ######################
+        
+        
+        sim_length = 624000.00000000001
+        
+        dem2 = 0
+
+    
+        """ Create a signal to check if inventory < reorder point, signal to operate"""
+    
+        def repairTime():
+            MTTR = np.random.exponential(repair)
+            return MTTR
+    
+        def failureTime():
+            MTBF = np.random.exponential(failure)
+            return MTBF
+    
+        def periodicDemand():
+            global inventoryLevel, backOrders, totalDemandArrival, signal, starting_inventory, dem2
+            global inventoryPosition, backOrderLevel, requestPlaced, demandarray, demands12, demandRate
+            global demandMet, periodinventory, demnCV, arrivalHours, demands13, unitsShort, tdArrival
+            
+            ##########################################
+            
+            m = 4500 # mean of normal distribution
+            v = (450)**2 # variance of normal distribution
+            mu = math.log((m**2)/math.sqrt(v+m**2)) # Mean of lognormal distribution
+            sigma = math.sqrt(math.log(v/(m**2)+1)) # Std dev of log normal distribution
+            demand = (np.random.lognormal(mu, sigma))
+            
+            # demand = np.random.poisson(4500.0)
+            
+            ##########################################
+            
+            # print(demand)
+            # demands12 = demand
+            
+            demands13 += demand  
+            # demandarray.append(demand)
+            
+            totalDemandArrival += 1
+            tdArrival +=1
+            # print "Total Demand Arrival %d " % totalDemandArrival
+            # starting_inventory.append(inventoryLevel)
+            
+            if inventoryLevel >= demand:
+                inventoryLevel -= demand
+                periodinventory=(inventoryLevel)
+                inventoryPosition = inventoryLevel + requestPlaced*np.floor(leadTime * JPH)
+                # print("inventoryLevel >= demand", inventoryPosition, inventoryLevel)
+                
+                starting_inventory.append(inventoryLevel)
+                running_inventoryLevel.append(inventoryLevel)
+                starting_Inventory_poistion.append(inventoryPosition)
+                # print(starting_Inventory_poistion)
+                
+                demandMet = 1
+                
+            else:
+                # inventoryPosition = inventoryPosition - demand
+                
+                inventoryLevel = 0
+                periodinventory=(inventoryLevel)
+                inventoryPosition = inventoryLevel + requestPlaced*np.floor(leadTime * JPH)
+                backOrders += 1
+                
+                
+                unitsShort+= 1
+                # unitsShort.append((demand - inventoryLevel)*0.15)
+                # inventoryLevel = 0
+                # print(unitsShort)
+                
+                starting_inventory.append(inventoryLevel)
+                running_inventoryLevel.append(inventoryLevel)
+                starting_Inventory_poistion.append(inventoryPosition)
+                # print(starting_Inventory_poistion)
+                
+                demandMet = 0
+            
+            while inventoryPosition <= reorderPoint:
+                "With variable demand inventory position at time may go below reorder point"
+                # print(inventoryPosition, env.now)
+                signal += 1
+                requestPlaced += 1
+                inventoryPosition = inventoryLevel + requestPlaced*np.floor(leadTime * JPH)
+                starting_Inventory_poistion.append(inventoryPosition)
+                # print(requestPlaced)
+                # print(starting_Inventory_poistion)
+                
+                
+            demandArrivalFrequency = 120.0
+            dem2 += demandArrivalFrequency
+            
+            return demand, inventoryLevel, backOrders, demandArrivalFrequency, starting_inventory, signal, demandMet
+    
+        class Machine(object):
+            def __init__(self, env):
+                self.env = env
+                self.parts_made = 0
+                self.failure = False
+                self.start = 0
+                self.repairTime = 0
+                self.production = 0
+                self.prd = 0
+                self.idleTime = False
+                self.inventoryLevel = inventoryLevel
+                self.productionDuration = leadTime
+                self.weeklyproduction = 0
+                self.weeklyDemand = 0
+                self.accumulatedInventory = 0
+                self.time_count = 0
+                self.time_var = 0
+                self.waitUntil = 0
+                self.period_length_array = []
+                self.weekly_inventory = []
+                self.weekly_inventory_cost = []
+                self.weekly_backorders = []
+                self.weekly_backorders_cost = []
+                self.signal = 0
+                self.time = []
+                self.productionend = 0
+                self.periodproduction = 0
+                self.periodicproduction = []
+                self.periodicinventory = []
+                self.endingInventoryLevel = []
+    
+                env.process(self.Periodic_Production())            
+                env.process(self.demandArrivalFrequency())
+                self.process = env.process(self.working())
+                env.process(self.machine_failure())
+                
+                #env.process(self.weeklyInventory())
+            
+            def demandArrivalFrequency(self):
+                global starting_inventory, starting_backorders, signal, requestPlaced, nextDemandArrivalTime, tup
+                
+                while True:
+                    prdDemand = periodicDemand()
+
+                    if prdDemand[6] == 1:
+                        tup = ("Demand generated",self.env.now, prdDemand[0], "Demand Met", inventoryLevel)
+                        # tup = (self.env.now, inventoryLevel)
+                    
+                    else:
+                        tup = ("Demand generated", self.env.now, prdDemand[0], "Demand Not Met", inventoryLevel)
+                        # tup = (self.env.now, inventoryLevel)
+
+                    # writer.writerow(tup)
+                    
+                    frequency = prdDemand[3]
+                    nextDemandArrivalTime += frequency
+
+                    self.weeklyDemand += prdDemand[0]
+                    # print(self.env.now)
+                    yield self.env.timeout(frequency)
+
+                    self.time_var += frequency
+                    
+                    if self.time_var >= 480.0:
+                        
+                        self.weekly_inventory.append(np.mean(prdDemand[4])) # Weekly average inventory
+                        self.weekly_inventory_cost.append(np.mean(prdDemand[4])*inventoryCost)  # cost of Weekly average inventory
+                        # print(self.weekly_inventory)
+                    
+                        starting_inventory = []
+                        self.time_var = 0
+
+            def working(self):
+                # end = start = 0
+                global inventoryLevel, signal, orders, totalIdleTime, global_period_array, backOrders
+                global backOrderLevel, starting_inventory, requestPlaced, inventoryPosition
+                global nextDemandArrivalTime, tup, running_inventoryLevel, variableRepairTime
+                while True:
+                    if signal >= 1:
+                        # print("Current number of request in queue", signal, self.env.now)
+                        productionStartTime = self.env.now
+                        # print(productionStartTime)
+                        tupiii = ("Production Start", self.env.now)
+                        # writer.writerow(tupiii)
+                        orders += 1
+                        self.productionDuration = leadTime
+                        while self.productionDuration:
+                            # print(self.env.now)
+                            try:
+                                self.start = self.env.now
+                                yield self.env.timeout(self.productionDuration)
+                                self.productionDuration = 0
+                                # print self.env.now
+                            except sim.Interrupt:
+                                self.failure = True
+                                tup_iv = ("Failure", self.env.now)
+                                # writer.writerow(tup_iv)
+                                self.productionDuration -= self.env.now - self.start
+                                variableRepairTime = repairTime()
+                                self.repairTime = variableRepairTime
+                                # print(variableRepairTime, self.repairTime)
+                                yield self.env.timeout(self.repairTime)
+                                tup_v = ("Failure end", self.env.now)
+                                # writer.writerow(tup_v)
+                                self.failure = False
+
+                        # print("Production End Time", self.env.now)
+                        self.productionend = self.env.now
+                        self.production = np.floor(leadTime * JPH)
+                        "This captures the 24 hours production and its variance"
+                        self.periodproduction = np.floor(leadTime * JPH)
+                        self.prd += np.floor(leadTime * JPH)
+                        global_period_array.append((self.env.now - productionStartTime))
+                        
+                        
+                        
+                        self.endingInventoryLevel.append(inventoryLevel)
+
+                        inventoryLevel += self.production
+                        periodinventory = inventoryLevel
+                        
+                        starting_inventory.append(inventoryLevel)
+                        running_inventoryLevel.append(inventoryLevel)
+                        
+                        tupii = tup + (productionStartTime, self.production, self.productionend, self.productionend - productionStartTime, inventoryLevel, self.production*24.0/(self.productionend - productionStartTime))
+                        # self.production = 0
+                        
+                        # tupii = (productionStartTime, self.env.now, inventoryLevel)
+                        
+                        requestPlaced -= 1
+                        signal -= 1
+                        
+                        if signal != 0:
+                            self.time.append(0.0)
+                        
+                        # writer.writerow(tupii)
+
+                    else:
+                        start = self.env.now
+                        while signal == 0:
+                            self.idleTime = True
+                            # print(self.env.now, inventoryLevel)
+                            yield self.env.timeout(nextDemandArrivalTime - self.env.now)
+                            # print(self.env.now)
+                            self.idleTime = False
+                            end = self.env.now
+                        self.time.append(end - start)
+                        # print(self.time)
+                        
+                        tupi = tup + ("", "", "", "", "", "") + (end-start, )
+
+                        # writer.writerow(tupi)
+                    
+                    tup = ("", "", "", "", "")
+    
+            def machine_failure(self):
+                """Fails the machine at exponential intervals"""
+                global variableRepairTime
+                while True:
+                    yield self.env.timeout(failureTime())
+                    # print(variableRepairTime)
+                    if variableRepairTime > 0:
+                        yield self.env.timeout(variableRepairTime)
+                        variableRepairTime = 0
+                    if not self.failure:
+                        if not self.idleTime:
+                            self.process.interrupt()
+            
+            def Periodic_Production(self):
+                global demands12, demandarray, inventoryLevel, periodinventory
+                global demands13, unitsShort, tdArrival
+                while True:
+                    yield self.env.timeout(120.00)
+                    self.periodicproduction.append(self.periodproduction)
+                    self.periodproduction = 0
+                    self.periodicinventory.append(periodinventory)
+                    # periodinventory = 0
+                    
+                    
+                    # tupVV = (self.env.now, demands13)
+                    # writer.writerow(tupVV)
+                    demandarray.append(demands13)
+                    # print(demandarray)
+                    demands13 = 0
+                    
+                    # demandarray.append(demands12)
+                    # demands12 = 0
+                    # print(self.periodicproduction)
+                    
+                    "Checking if monthly service level is met"
+                    # sLevel = 1.0 - float(decimal.Decimal(unitsShort)/decimal.Decimal(tdArrival))
+                    # print(sLevel)
+                    # unitsShort = 0
+                    # tdArrival = 0
+                    
+                    
+    
+        env = sim.Environment()
+        # machinary = sim.Resource(env, capacity = 1)
+        machines = Machine(env)
+        env.run(until=sim_length)
+        
+
+        var_period_length = np.var(global_period_array)
+        average_period_length = np.mean(global_period_array)
+        # print(average_period_length, var_period_length*3600)
+        # 
+        # print(np.mean(machines.periodicproduction), np.var(machines.periodicproduction))
+        # print(np.mean(machines.periodicproduction), np.var(machines.periodicproduction), np.mean(running_inventoryLevel), np.var(running_inventoryLevel))
+    
+        totalPenaltyCost = backOrders*penaltyCost
+        starting_backorders.append(backOrders)
+        # print(backOrders)
+        # print(np.mean(machines.weekly_backorders), np.mean(machines.weekly_inventory))
+        # plt.subplot(221)
+        # plt.plot(machines.weekly_backorders)
+        # plt.subplot(223)
+        # plt.plot(machines.weekly_inventory)
+        # plt.show()
+        totalOrderingCost = orders*fixedCost
+        totalInventoryCost = np.sum(machines.weekly_inventory_cost)
+        
+
+    
+        serviceLevel = 1.0 - float(decimal.Decimal(backOrders)/decimal.Decimal(totalDemandArrival))
+        
+        # print(np.mean(machines.weekly_inventory), backOrders, orders, serviceLevel, 
+        #       totalPenaltyCost + totalOrderingCost + totalInventoryCost, np.mean(machines.time),  
+        #       np.mean(machines.periodicproduction), np.var(machines.periodicproduction), 
+        #       np.mean(demandarray), np.var(demandarray),
+        #       np.var(demandarray)/np.var(machines.periodicproduction))
+        
+        # print(np.mean(machines.weekly_inventory)*inventoryCost, backOrders*penaltyCost/1300, 
+        #       orders*fixedCost/1300)
+        
+        # print(totalPenaltyCost , totalOrderingCost , totalInventoryCost, serviceLevel)
+        # print(backOrders)
+        
+        # print(np.mean(machines.weekly_inventory), skew(demandarray), np.var(demandarray))
+        
+        # print(np.mean(machines.endingInventoryLevel), np.mean(running_inventoryLevel))
+        
+        inventory_average.append(np.mean(machines.weekly_inventory))   
+        orders_average.append(orders)
+        lost_sales_average.append(backOrders)
+                  
+        # print(np.max(starting_Inventory_poistion))
+        
+    
+        tCC += (totalPenaltyCost + totalOrderingCost + totalInventoryCost)
+        # print(totalPenaltyCost + totalOrderingCost + totalInventoryCost)
+        tCC_array.append(totalPenaltyCost + totalOrderingCost + totalInventoryCost)
+        
+        
+        Pcost += totalPenaltyCost
+        Ocost += totalOrderingCost
+        Icost += totalInventoryCost
+                
+        # avgServiceLevel += serviceLevel
+        avgServiceLevel_array.append(serviceLevel)
+        nrep += 1
+        #print(nrep)
+        
+        totalUnitsProduced += machines.prd
+        totalUnitsProduced_array.append(machines.prd)
+        
+        Tidletime += totalIdleTime
+        #print(totalIdleTime)
+        
+        # print(np.mean(demandarray),np.var(demandarray))
+        
+    
+    # varTCC = np.var(tCC_array)
+    # tCC = tCC/rep
+    
+    # f.close()
+    
+    tCC = np.mean(tCC_array)
+    
+    # varServiceLevel = np.var(avgServiceLevel_array)
+    meanServiceLevel = np.mean(avgServiceLevel_array)
+    maxServiceLevel = np.amax(avgServiceLevel_array)
+    minServiceLevel = np.amin(avgServiceLevel_array)
+    
+    # avgServiceLevel = avgServiceLevel/rep
+    
+    Pcost = Pcost/rep
+    
+    Icost = Icost/rep
+    
+    Ocost = Ocost/rep
+    
+    Tidletime = Tidletime/rep
+    
+    totalUnitsProduced = totalUnitsProduced/rep
+    # varUnitsProduced = np.var(totalUnitsProduced_array)
+    
+    # print(meanServiceLevel, maxServiceLevel, minServiceLevel)
+    print("Total Cost1", tCC, meanServiceLevel)
+    # print(np.mean(inventory_average), np.mean(orders_average)/1300, np.mean(lost_sales_average)/1300)
+    
+    return tCC, meanServiceLevel
+
+
+def Poolfunction(reOrderPoint, leadtime):
+    QRCode = RunQRcode(reOrderPoint, leadtime)
+    return QRCode
+
+
+# Poolfunction(4531, 77.54868539)
